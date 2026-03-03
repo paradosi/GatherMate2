@@ -96,10 +96,14 @@ end
 	Pin OnEnter
 ]]
 local tooltip_template = "|c%02x%02x%02x%02x%s|r"
-local mouseoveredPins = {}
-local checkMoused = false
 local function showPin(self)
 	if (self.title) then
+		local pinset
+		if self.worldmap then
+			pinset = worldmapPins
+		else
+			pinset = minimapPins
+		end
 		local x, y = self:GetCenter()
 		local parentX, parentY = UIParent:GetCenter()
 		if ( x > parentX ) then
@@ -107,32 +111,14 @@ local function showPin(self)
 		else
 			GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
 		end
+
 		local t = db.trackColors
-		local dbtable
-		if not checkMoused then
-			local pinset
-			if self.worldmap then
-				pinset = worldmapPins
-			else
-				pinset = minimapPins
-			end
-			for id, pin in pairs(pinset) do --Cache mouseovered pins to improve tooltip perf
-				if pin.title and pin:IsMouseOver() then
-					dbtable = t[pin.nodeType]
-					mouseoveredPins[pin] = format(tooltip_template, dbtable.Alpha*255, dbtable.Red*255, dbtable.Green*255, dbtable.Blue*255, pin.title)
-				end
-			end
-			checkMoused = true
-		end
-		dbtable = t[self.nodeType]
-		local text = format(tooltip_template, dbtable.Alpha*255, dbtable.Red*255, dbtable.Green*255, dbtable.Blue*255, self.title)
-
-		for pin, pin_text in pairs(mouseoveredPins) do
-			if pin ~= self then
-				text = text .. "\n" .. pin_text
+		local text = format(tooltip_template, t[self.nodeType].Alpha*255, t[self.nodeType].Red*255, t[self.nodeType].Green*255, t[self.nodeType].Blue*255, self.title)
+		for id, pin in pairs(pinset) do
+			if pin:IsMouseOver() and pin.title and pin ~= self then
+				text = text .. "\n" .. format(tooltip_template, t[pin.nodeType].Alpha*255, t[pin.nodeType].Red*255, t[pin.nodeType].Green*255, t[pin.nodeType].Blue*255, pin.title)
 			end
 		end
-
 		GameTooltip:SetText(text)
 		GameTooltip:Show()
 	end
@@ -142,8 +128,6 @@ end
 ]]
 local function hidePin(self)
 	GameTooltip:Hide()
-	wipe(mouseoveredPins)
-	checkMoused = false
 end
 --[[
 	Pin click handler
@@ -192,12 +176,14 @@ local function generatePinMenu(self,level)
 		info.disabled     = nil
 		info.isTitle      = nil
 		info.notCheckable = nil
-		for pin, pin_text in pairs(mouseoveredPins) do --Reuse here, not as significant since this is ran occasionally
-			info.text = L["Delete"] .. " :" ..pin.title
-			info.icon = nodeTextures[pin.nodeType][GatherMate:GetIDForNode(pin.nodeType, pin.title)]
-			info.func = deletePin
-			info.arg1 = pin
-			UIDropDownMenu_AddButton(info, level);
+		for id, pin in pairs(worldmapPins) do
+			if pin:IsMouseOver() and pin.title then
+				info.text = L["Delete"] .. " :" ..pin.title
+				info.icon = nodeTextures[pin.nodeType][GatherMate:GetIDForNode(pin.nodeType, pin.title)]
+				info.func = deletePin
+				info.arg1 = pin
+				UIDropDownMenu_AddButton(info, level);
+			end
 		end
 
 		if TomTom then
@@ -262,7 +248,7 @@ function Display:OnEnable()
 	ExpandSkillHeader(0)
 	self:MINIMAP_UPDATE_TRACKING()
 	self:PlayerZoneChanged()
-	--self:UpdateMaps()
+	--self:UpdateMaps()  -- already in DigsitesChanged()
 	fullInit = true
 end
 
@@ -334,14 +320,15 @@ function Display:MINIMAP_UPDATE_TRACKING()
 			active_tracking[tracking_spells[texture]] = true
 		end
 	else
-		local count = C_Minimap.GetNumTrackingTypes()
+		local count = (C_Minimap and C_Minimap.GetNumTrackingTypes or GetNumTrackingTypes)();
+		local info;
 		for id=1, count do
-			local info = C_Minimap.GetTrackingInfo(id)
-			if info.active and tracking_spells[info.name] then
-				active_tracking[tracking_spells[info.name]] = true
+			local name, texture, active, category = (C_Minimap and C_Minimap.GetTrackingInfo or GetTrackingInfo)(id);
+			if tracking_spells[name] and active then
+				active_tracking[tracking_spells[name]] = true
 			else
-				if tracking_spells[info.name] and not info.active then
-					active_tracking[tracking_spells[info.name]] = false
+				if tracking_spells[name] and not active then
+					active_tracking[tracking_spells[name]] = false
 				end
 			end
 		end
@@ -530,7 +517,6 @@ function Display:addMiniPin(pin, refresh)
 		alpha = 2 - dist
 		if alpha < 0 then
 			pin.keep = nil
-			alpha = 0
 		end
 	end
 	-- finally show and SetPoint the pin
@@ -538,7 +524,7 @@ function Display:addMiniPin(pin, refresh)
 		pin:Show()
 		pin:ClearAllPoints()
 		pin:SetPoint("CENTER", Minimap, "CENTER", diffX * minimapWidth, -diffY * minimapHeight)
-		pin:SetAlpha(min(alpha,db.alpha))
+		pin:SetAlpha(max(0, min(alpha, db.alpha)))
 	else
 		pin:Hide()
 	end
@@ -562,7 +548,7 @@ end
 	Minimap rotation changed
 ]]
 function Display:ChangedVars(event,cvar,value)
-	if cvar == "ROTATE_MINIMAP" or cvar == "rotateMinimap" then
+	if cvar == "ROTATE_MINIMAP" then
 		rotateMinimap = value == "1"
 	end
 	forceNextUpdate = true
@@ -748,8 +734,7 @@ function Display.WorldMapDataProvider:RefreshAllData(fromOnShow)
 	-- update visibility for archaeology blobs
 	Display:UpdateVisibility()
 
-	local map = self:GetMap()
-	local uiMapID = map:GetMapID()
+	local uiMapID = self:GetMap():GetMapID()
 	if not uiMapID then return end
 
 	if GatherMate.phasing[uiMapID] then uiMapID = GatherMate.phasing[uiMapID] end
@@ -758,7 +743,7 @@ function Display.WorldMapDataProvider:RefreshAllData(fromOnShow)
 	for i,db_type in pairs(GatherMate.db_types) do
 		if GatherMate.Visible[db_type] then
 			for coord, nodeID in GatherMate:GetNodesForZone(uiMapID, db_type) do
-				local pin = map:AcquirePin("GatherMate2WorldMapPinTemplate", coord,  nodeID, db_type, uiMapID)
+				local pin = self:GetMap():AcquirePin("GatherMate2WorldMapPinTemplate", coord,  nodeID, db_type, uiMapID)
 				table.insert(worldmapPins, pin)
 			end
 		end

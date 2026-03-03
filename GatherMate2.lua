@@ -11,9 +11,7 @@ _G["GatherMate2"] = GatherMate
 GatherMate.HBD = LibStub("HereBeDragons-2.0")
 local HBDMigrate = LibStub("HereBeDragons-Migrate")
 
-local WoWClassic = (WOW_PROJECT_ID == WOW_PROJECT_CLASSIC)
-local WoWCata = (WOW_PROJECT_ID == WOW_PROJECT_CATACLYSM_CLASSIC)
-local WoWMists = (WOW_PROJECT_ID == WOW_PROJECT_MISTS_CLASSIC)
+local WoWBC = (WOW_PROJECT_ID == WOW_PROJECT_BURNING_CRUSADE_CLASSIC)
 
 -- locals
 local db, gmdbs, filter
@@ -77,7 +75,10 @@ local defaults = {
 				["autoImport"] = false,
 				["bcOnly"] = false,
 			},
-		}
+		},
+		minimapIcon = {
+			hide = false,
+		},
 	},
 }
 local floor = floor
@@ -99,8 +100,9 @@ function GatherMate:OnInitialize()
 	GatherMate2MineDB = GatherMate2MineDB or {}
 	GatherMate2FishDB = GatherMate2FishDB or {}
 	GatherMate2TreasureDB = GatherMate2TreasureDB or {}
-	GatherMate2GasDB = GatherMate2GasDB or {}
-	GatherMate2ArchaeologyDB = GatherMate2ArchaeologyDB or {}
+	if WoWBC then
+		GatherMate2GasDB = GatherMate2GasDB or {}
+	end
 	self.gmdbs = {}
 	self.db_types = {}
 	gmdbs = self.gmdbs
@@ -108,11 +110,8 @@ function GatherMate:OnInitialize()
 	self:RegisterDBType("Mining", GatherMate2MineDB)
 	self:RegisterDBType("Fishing", GatherMate2FishDB)
 	self:RegisterDBType("Treasure", GatherMate2TreasureDB)
-	if not WoWClassic then
+	if WoWBC then
 		self:RegisterDBType("Extract Gas", GatherMate2GasDB)
-	end
-	if WoWCata or WoWMists then
-		self:RegisterDBType("Archaeology", GatherMate2ArchaeologyDB)
 	end
 	db = self.db.profile
 	filter = db.filter
@@ -215,8 +214,7 @@ function GatherMate:ClearDB(dbx)
 	elseif dbx == "Fishing" then GatherMate2FishDB = {}; gmdbs[dbx] = GatherMate2FishDB
 	elseif dbx == "Mining" then GatherMate2MineDB = {}; gmdbs[dbx] = GatherMate2MineDB
 	elseif dbx == "Treasure" then GatherMate2TreasureDB = {}; gmdbs[dbx] = GatherMate2TreasureDB
-	elseif dbx == "Extract Gas" then GatherMate2GasDB = {}; gmdbs[dbx] = GatherMate2GasDB
-	elseif dbx == "Archaeology" then GatherMate2ArchaeologyDB = {}; gmdbs[dbx] = GatherMate2ArchaeologyDB
+	elseif WoWBC and dbx == "Extract Gas" then GatherMate2GasDB = {}; gmdbs[dbx] = GatherMate2GasDB
 	else -- for custom DBs we dont know the global name, so we clear it old-fashion style
 		local db = gmdbs[dbx]
 		if not db then error("Trying to clear unknown database: "..dbx) end
